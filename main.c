@@ -95,13 +95,70 @@ void drawWorld(World* world){
     }
 }
 
-BlockVector2 getBlock(Vector2 pos){
+BlockVector2 getBlockPos(Vector2 pos){
     int blockX = ((int)(pos.x / BLOCK_SIZE));
     int blockY = ((int)(pos.y / BLOCK_SIZE));
     return (BlockVector2){ blockX, blockY };
 }
 
+BlockType* getBlockType(World* world, BlockVector2 blockpos){
+    if (!world->blocks){
+        return NULL;
+    }
+    Block* block = &(world->blocks[blockpos.x][blockpos.y]);
+    return &(block->type);
+}
+
+bool isInBounds(BlockVector2 blockpos){
+    if (blockpos.x >= 0 && blockpos.x < WORLD_BLOCK_WIDTH && blockpos.y >= 0 && blockpos.y < WORLD_BLOCK_HEIGHT){
+        return true;
+    }
+    return false;
+}
+
+bool isBlock(World* world, BlockVector2 blockPos, int type){
+    if (!world->blocks){
+        return false;
+    }
+    BlockType* checkType = getBlockType(world, blockPos);
+    if (checkType->id == type){
+        return true;
+    }
+    return false;
+}
+
+bool isBlockNot(World* world, BlockVector2 blockPos, int type){
+    if (!world->blocks){
+        return false;
+    }
+    BlockType* checkType = getBlockType(world, blockPos);
+    if (checkType->id != type){
+        return true;
+    }
+    return false;
+}
+
+bool checkAdjacent(World* world, BlockVector2 blockpos, bool (*validate)(World*, BlockVector2, int), int type){
+    if (!world->blocks){
+        return false;
+    }
+    for (int i = -1; i < 2; i += 2){
+        BlockVector2 checkPosX = (BlockVector2){ blockpos.x + i, blockpos.y };
+        BlockVector2 checkPosY = (BlockVector2){ blockpos.x, blockpos.y + i };
+        if (isInBounds(checkPosX) && validate(world, checkPosX, type)){
+            return true;
+        }
+        if (isInBounds(checkPosY) && validate(world, checkPosY, type)){
+            return true;
+        }
+    }
+    return false;
+}
+
 void changeBlock(World* world, BlockVector2 blockPos, BlockType newType){
+    if (!world->blocks){
+        return;
+    }
     Block* block = &(world->blocks[blockPos.x][blockPos.y]);
     block->type = newType;
 }
@@ -129,23 +186,23 @@ void game(void){
     printf("Game Init Successful\n");
     // Update
     while (!WindowShouldClose()){
+        BlockVector2 mouseTarget = getBlockPos(GetMousePosition());
         // user input
-        
+        if (IsKeyPressed(KEY_D) && checkAdjacent(&world, mouseTarget, &isBlock, 0)){ // Destroy
+            changeBlock(&world, mouseTarget, AIR);
+        }
+        if (IsKeyPressed(KEY_B) && getBlockType(&world, mouseTarget)->isAir && checkAdjacent(&world, mouseTarget, &isBlockNot, 0)){ // Build
+            changeBlock(&world, mouseTarget, STONE);
+        }
         // Render
         BeginDrawing();
         ClearBackground(RAYWHITE);
         drawWorld(&world);
-        BlockVector2 mouseTarget = getBlock(GetMousePosition());
         drawBlockOutline(mouseTarget);
-        if (IsKeyPressed(KEY_D)){
-            changeBlock(&world, mouseTarget, AIR);
-        }
-        if (IsKeyPressed(KEY_B)){
-            changeBlock(&world, mouseTarget, STONE);
-        }
         // debug text
-        DrawText(TextFormat("world height (x): %d", world.width), 10, 10, 20, BLACK);
-        DrawText(TextFormat("world width (y): %d", world.height), 10, 40, 20, BLACK);
+        DrawText(TextFormat("world width (x): %d", world.width), 10, 10, 20, BLACK);
+        DrawText(TextFormat("world height (y): %d", world.height), 10, 40, 20, BLACK);
+        DrawText(TextFormat("Cursor block position: %d (x), %d (y)", mouseTarget.x, mouseTarget.y), 10, 70, 20, BLACK);
         DrawFPS(screenWidth - 100, 10);
         EndDrawing();
     }
