@@ -1,6 +1,7 @@
 #include "raylib.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #define BLOCK_SIZE          20
 #define WORLD_BLOCK_WIDTH   80
@@ -113,6 +114,7 @@ bool isInBounds(BlockVector2 blockpos){
     if (blockpos.x >= 0 && blockpos.x < WORLD_BLOCK_WIDTH && blockpos.y >= 0 && blockpos.y < WORLD_BLOCK_HEIGHT){
         return true;
     }
+    // printf("Position out of bounds: %d (x), %d (y)\n", blockpos.x, blockpos.y);
     return false;
 }
 
@@ -169,6 +171,33 @@ void drawBlockOutline(BlockVector2 blockPos){
     DrawRectangleLines(blockX, blockY, BLOCK_SIZE, BLOCK_SIZE, BLACK);
 }
 
+void explosionRay(World* world, BlockVector2 blockpos, int radius, float angle){
+    // sin==rise, cos==run
+    float angleCos = cos(angle);
+    float angleSin = sin(angle);
+    float xChange, yChange, screenPosX, screenPosY;
+    BlockVector2 newBlock;
+    for (int i = 0; i < radius; i++){
+        xChange = angleCos * i;
+        yChange = angleSin * i;
+        // printf("Rise(y): %.2f, Run(x): %.2f\n", yChange, xChange);
+        newBlock = (BlockVector2){ blockpos.x + (int)xChange, blockpos.y + (int)yChange };
+        if (isInBounds(newBlock)){
+            changeBlock(world, newBlock, AIR);
+        }
+        // printf("New: %d (x), %d (y)\n", newBlock.x, newBlock.y);
+    }
+}
+
+void explosion(World* world, BlockVector2 origin, int radius, int rays){
+    const double angleChange = (PI * 2) / rays;
+    double angle;
+    for (int i = 0; i < rays; i++){
+        angle = angleChange * i;
+        explosionRay(world, origin, radius, angle);
+    }
+}
+
 void game(void){
     // Game init
     const int screenWidth = WORLD_BLOCK_WIDTH * BLOCK_SIZE;
@@ -194,6 +223,7 @@ void game(void){
         if (IsKeyPressed(KEY_B) && getBlockType(&world, mouseTarget)->isAir && checkAdjacent(&world, mouseTarget, &isBlockNot, 0)){ // Build
             changeBlock(&world, mouseTarget, STONE);
         }
+        if(IsKeyPressed(KEY_R)) explosion(&world, mouseTarget, 7, 40);
         // Render
         BeginDrawing();
         ClearBackground(RAYWHITE);
