@@ -8,9 +8,9 @@
 #define WORLD_BLOCK_HEIGHT  50
 
 #define AIR     (BlockType){ 0, WHITE, 0.0f, true }
-#define STONE   (BlockType){ 1, GRAY, 0.2f, false }
-#define DIRT    (BlockType){ 2, BROWN, 0.0f, false }
-#define GRASS   (BlockType){ 3, GREEN, 0.1f, false }
+#define STONE   (BlockType){ 1, GRAY, 0.3f, false }
+#define DIRT    (BlockType){ 2, BROWN, 0.1f, false }
+#define GRASS   (BlockType){ 3, GREEN, 0.2f, false }
 
 typedef struct BlockVector2 {
     int x;
@@ -41,7 +41,7 @@ Block** initBlocks(){
     const int worldSize = WORLD_BLOCK_WIDTH * WORLD_BLOCK_HEIGHT;
     const int halfWorldHeight = WORLD_BLOCK_HEIGHT / 2;
     const int grassLine = halfWorldHeight + 1;
-    const int dirtLayer = grassLine + 2;
+    const int dirtLayer = grassLine + 10;
     Block** blocks = (Block**)malloc((worldSize) * sizeof(Block*));
     if (!blocks){
         return NULL; // Allocation error 1
@@ -171,31 +171,76 @@ void drawBlockOutline(BlockVector2 blockPos){
     DrawRectangleLines(blockX, blockY, BLOCK_SIZE, BLOCK_SIZE, BLACK);
 }
 
-void explosionRay(World* world, BlockVector2 blockpos, int radius, float angle){
+BlockVector2* explosionRay(World* world, BlockVector2 blockpos, float power, const int travel, const float powerFallOff, float angle){
     // sin==rise, cos==run
     float angleCos = cos(angle);
     float angleSin = sin(angle);
     float xChange, yChange, screenPosX, screenPosY;
+    float powerRemaining = power - powerFallOff;
     BlockVector2 newBlock;
-    for (int i = 0; i < radius; i++){
+    BlockVector2* affectedBlocks = (BlockVector2*)malloc((travel - 1) * sizeof(BlockVector2));
+    if (!affectedBlocks){
+        return NULL;
+    }
+    for (int i = 1; i < travel; i++){
         xChange = angleCos * i;
         yChange = angleSin * i;
-        // printf("Rise(y): %.2f, Run(x): %.2f\n", yChange, xChange);
-        newBlock = (BlockVector2){ blockpos.x + (int)xChange, blockpos.y + (int)yChange };
+        newBlock = (BlockVector2){ (int)(blockpos.x + 0.5f + xChange), (int)(blockpos.y + 0.5f + yChange) };
         if (isInBounds(newBlock)){
-            changeBlock(world, newBlock, AIR);
+            powerRemaining -= getBlockType(world, newBlock)->blastResist + powerFallOff;
+            if (powerRemaining > 0.0f){
+                affectedBlocks[i - 1] = newBlock;
+            } else {
+                break;
+            }
         }
-        // printf("New: %d (x), %d (y)\n", newBlock.x, newBlock.y);
     }
+    return affectedBlocks;
 }
 
-void explosion(World* world, BlockVector2 origin, int radius, int rays){
+void explosion(World* world, BlockVector2 origin, float power, const int rays){
     const double angleChange = (PI * 2) / rays;
-    double angle;
-    for (int i = 0; i < rays; i++){
-        angle = angleChange * i;
-        explosionRay(world, origin, radius, angle);
+    const float powerFallOff = 0.2f;
+    const int travel = (int)ceil(power / powerFallOff);
+    double angle, angleCos, angleSin;
+    float xChange, yChange, screenPosX, screenPosY;
+    float powerRemaining;
+    BlockVector2 newBlock;
+    Block** affectedBlocks = (Block**)malloc((rays * travel) * sizeof(Block*));
+    if (!affectedBlocks){
+        return;
     }
+    int arrIndex = 0;
+    //printf("Starting explosion...\n");
+    for (int ray = 0; ray < rays; ray++){
+        // printf("Casting ray %d...\n", i);
+        angle = angleChange * ray;
+        angleCos = cos(angle);
+        angleSin = sin(angle);
+        powerRemaining = power - powerFallOff;
+        for (int n = 0; n < travel; n++){
+            xChange = angleCos * n;
+            yChange = angleSin * n;
+            newBlock = (BlockVector2){ (int)(origin.x + 0.5f + xChange), (int)(origin.y + 0.5f + yChange) };
+            if (isInBounds(newBlock)){
+                powerRemaining -= (getBlockType(world, newBlock)->blastResist + powerFallOff);
+                if (powerRemaining > 0.0f){
+                    affectedBlocks[arrIndex] = &(world->blocks[newBlock.x][newBlock.y]);
+                    arrIndex += 1;
+                } else {
+                    break;
+                }
+            }
+            
+        }
+        
+    }
+    //printf("Destroying blocks...\n");
+    for(int i = 0; i < arrIndex; i++){
+        affectedBlocks[i]->type = AIR;
+    }
+    free(affectedBlocks);
+
 }
 
 void game(void){
@@ -223,11 +268,11 @@ void game(void){
         if (IsKeyPressed(KEY_B) && getBlockType(&world, mouseTarget)->isAir && checkAdjacent(&world, mouseTarget, &isBlockNot, 0)){ // Build
             changeBlock(&world, mouseTarget, STONE);
         }
-        if(IsKeyPressed(KEY_R)) explosion(&world, mouseTarget, 7, 40);
         // Render
         BeginDrawing();
         ClearBackground(RAYWHITE);
         drawWorld(&world);
+        if(IsKeyPressed(KEY_R)) explosion(&world, mouseTarget, 2.0f, 40);
         drawBlockOutline(mouseTarget);
         // debug text
         DrawText(TextFormat("world width (x): %d", world.width), 10, 10, 20, BLACK);
