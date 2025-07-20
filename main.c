@@ -261,6 +261,9 @@ void game(void){
         DrawText(TextFormat("world width (x): %d", world.width), 10, 10, 20, BLACK);
         DrawText(TextFormat("world height (y): %d", world.height), 10, 40, 20, BLACK);
         DrawText(TextFormat("Cursor block position: %d (x), %d (y)", mouseTarget.x, mouseTarget.y), 10, 70, 20, BLACK);
+        DrawText("Press 'B' to build", 400, 10, 20, GRAY);
+        DrawText("Press 'D' to destroy", 400, 40, 20, GRAY);
+        DrawText("Press 'R' to spawn explosion", 400, 70, 20, GRAY);
         DrawFPS(screenWidth - 100, 10);
         EndDrawing();
     }
