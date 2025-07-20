@@ -29,6 +29,7 @@ typedef struct Block {
     BlockType type;
     float x;
     float y;
+    bool inExplosionQueue;
 } Block;
 
 typedef struct World {
@@ -63,6 +64,7 @@ Block** initBlocks(){
             blocks[x][y].x = x;
             blocks[x][y].y = y;
             blocks[x][y].rect = (Rectangle){ rectX, rectY, BLOCK_SIZE, BLOCK_SIZE };
+            blocks[x][y].inExplosionQueue = false;
             if (y <= halfWorldHeight){
                 blocks[x][y].type = AIR;
             } else if (y == grassLine){
@@ -171,73 +173,54 @@ void drawBlockOutline(BlockVector2 blockPos){
     DrawRectangleLines(blockX, blockY, BLOCK_SIZE, BLOCK_SIZE, BLACK);
 }
 
-BlockVector2* explosionRay(World* world, BlockVector2 blockpos, float power, const int travel, const float powerFallOff, float angle){
-    // sin==rise, cos==run
-    float angleCos = cos(angle);
-    float angleSin = sin(angle);
-    float xChange, yChange, screenPosX, screenPosY;
-    float powerRemaining = power - powerFallOff;
-    BlockVector2 newBlock;
-    BlockVector2* affectedBlocks = (BlockVector2*)malloc((travel - 1) * sizeof(BlockVector2));
-    if (!affectedBlocks){
-        return NULL;
-    }
-    for (int i = 1; i < travel; i++){
-        xChange = angleCos * i;
-        yChange = angleSin * i;
-        newBlock = (BlockVector2){ (int)(blockpos.x + 0.5f + xChange), (int)(blockpos.y + 0.5f + yChange) };
-        if (isInBounds(newBlock)){
-            powerRemaining -= getBlockType(world, newBlock)->blastResist + powerFallOff;
-            if (powerRemaining > 0.0f){
-                affectedBlocks[i - 1] = newBlock;
-            } else {
-                break;
-            }
-        }
-    }
-    return affectedBlocks;
-}
-
 void explosion(World* world, BlockVector2 origin, float power, const int rays){
+    // setup variables
     const double angleChange = (PI * 2) / rays;
     const float powerFallOff = 0.2f;
     const int travel = (int)ceil(power / powerFallOff);
     double angle, angleCos, angleSin;
     float xChange, yChange, screenPosX, screenPosY;
     float powerRemaining;
-    BlockVector2 newBlock;
+    BlockVector2 newBlockPos;
     Block** affectedBlocks = (Block**)malloc((rays * travel) * sizeof(Block*));
     if (!affectedBlocks){
-        return;
+        return; // allocation error
     }
     int arrIndex = 0;
-    //printf("Starting explosion...\n");
+    // cast rays radially around centerpoint
     for (int ray = 0; ray < rays; ray++){
-        // printf("Casting ray %d...\n", i);
         angle = angleChange * ray;
         angleCos = cos(angle);
         angleSin = sin(angle);
         powerRemaining = power - powerFallOff;
-        for (int n = 0; n < travel; n++){
-            xChange = angleCos * n;
-            yChange = angleSin * n;
-            newBlock = (BlockVector2){ (int)(origin.x + 0.5f + xChange), (int)(origin.y + 0.5f + yChange) };
-            if (isInBounds(newBlock)){
-                powerRemaining -= (getBlockType(world, newBlock)->blastResist + powerFallOff);
-                if (powerRemaining > 0.0f){
-                    affectedBlocks[arrIndex] = &(world->blocks[newBlock.x][newBlock.y]);
-                    arrIndex += 1;
-                } else {
-                    break;
-                }
+        // step along direction of ray
+        for (int length = 0; length < travel; length++){
+            xChange = angleCos * length;
+            yChange = angleSin * length;
+            newBlockPos = (BlockVector2){ (int)(origin.x + 0.5f + xChange), (int)(origin.y + 0.5f + yChange) };
+            if (!isInBounds(newBlockPos)){ // ensure detected block is within game bounds
+                break;
+            }
+            // reduce explosion power based on block resistance
+            powerRemaining -= (getBlockType(world, newBlockPos)->blastResist + powerFallOff);
+            if (powerRemaining <= 0.0f){ // ensure explosion has enough power to continue
+                break;
+            }
+            Block* newBlock = &(world->blocks[newBlockPos.x][newBlockPos.y]);
+            if (!newBlock->inExplosionQueue && !newBlock->type.isAir){ // ensure block is not air or already triggered
+                newBlock->inExplosionQueue = true;
+                affectedBlocks[arrIndex] = newBlock;
+                arrIndex += 1;
             }
             
         }
         
     }
-    //printf("Destroying blocks...\n");
+    // Preform explosion/replace all detected blocks with air
+    // printf("Destroying blocks (%d affected)...\n", arrIndex);
     for(int i = 0; i < arrIndex; i++){
         affectedBlocks[i]->type = AIR;
+        affectedBlocks[i]->inExplosionQueue = false;
     }
     free(affectedBlocks);
 
